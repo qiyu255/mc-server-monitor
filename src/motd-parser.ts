@@ -22,7 +22,27 @@ const COLOR_MAP = {
   'f': 'white',
 };
 
-export function parseMotd(motd) {
+export interface MotdSegment {
+  text: string;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikethrough: boolean;
+  dimColor: boolean;
+  isNewline?: boolean;
+}
+
+/**
+ * Pre-process a string to handle literal \\u00A7 escape sequences
+ * that some servers send instead of actual § characters.
+ */
+function preProcessMotd(str: string): string {
+  // Replace literal \\u00A7 (6 chars) with actual § (U+00A7)
+  return str.replace(/\\\\u00A7/g, '\u00A7').replace(/\\u00A7/g, '§');
+}
+
+export function parseMotd(motd: string | object | null): MotdSegment[] {
   if (typeof motd === 'object' && motd !== null) {
     return parseChatObject(motd);
   }
@@ -31,8 +51,9 @@ export function parseMotd(motd) {
     return [{ text: String(motd), color: 'white', bold: false, italic: false, underline: false, strikethrough: false, dimColor: false }];
   }
 
-  const segments = [];
-  let current = {
+  const rawStr = preProcessMotd(motd);
+  const segments: MotdSegment[] = [];
+  let current: MotdSegment = {
     text: '',
     color: 'white',
     bold: false,
@@ -42,11 +63,11 @@ export function parseMotd(motd) {
     dimColor: false,
   };
 
-  for (let i = 0; i < motd.length; i++) {
-    const char = motd[i];
+  for (let i = 0; i < rawStr.length; i++) {
+    const char = rawStr[i];
 
     if (char === '\u00A7' || char === '§' || char === '&') {
-      const code = motd[i + 1];
+      const code = rawStr[i + 1];
       if (!code) continue;
       i++;
 
@@ -62,8 +83,8 @@ export function parseMotd(motd) {
         current.underline = false;
         current.strikethrough = false;
         current.dimColor = false;
-      } else if (COLOR_MAP[code]) {
-        current.color = COLOR_MAP[code];
+      } else if (code in COLOR_MAP) {
+        current.color = COLOR_MAP[code as keyof typeof COLOR_MAP];
         current.dimColor = code === '8';
       } else if (code === 'l') {
         current.bold = true;
@@ -74,6 +95,7 @@ export function parseMotd(motd) {
       } else if (code === 'm') {
         current.strikethrough = true;
       }
+      // k (obfuscated) is ignored in terminal
     } else if (char === '\n') {
       if (current.text.length > 0) {
         segments.push({ ...current });
@@ -96,10 +118,10 @@ export function parseMotd(motd) {
   return segments;
 }
 
-function parseChatObject(obj) {
-  const segments = [];
+function parseChatObject(obj: any): MotdSegment[] {
+  const segments: MotdSegment[] = [];
 
-  function extract(node, inherited = { color: 'white', bold: false, italic: false, underline: false, strikethrough: false }) {
+  function extract(node: any, inherited = { color: 'white', bold: false, italic: false, underline: false, strikethrough: false }) {
     if (typeof node === 'string') {
       const parsed = parseMotd(node);
       for (const seg of parsed) {
@@ -125,7 +147,29 @@ function parseChatObject(obj) {
       strikethrough: node.strikethrough || inherited.strikethrough,
     };
 
-    if (node.text) {
+    // Handle translate component — extract text from "with" array if present
+    if (node.translate !== undefined) {
+      if (node.with && Array.isArray(node.with)) {
+        for (const item of node.with) {
+          extract(item, current);
+        }
+      } else {
+        const parsed = parseMotd(String(node.translate));
+        for (const seg of parsed) {
+          segments.push({
+            ...seg,
+            color: seg.color !== 'white' ? seg.color : current.color,
+            bold: seg.bold || current.bold,
+            italic: seg.italic || current.italic,
+            underline: seg.underline || current.underline,
+            strikethrough: seg.strikethrough || current.strikethrough,
+          });
+        }
+      }
+    }
+
+    // Use !== undefined so empty string "" is still processed
+    if (node.text !== undefined) {
       const parsed = parseMotd(node.text);
       for (const seg of parsed) {
         segments.push({
@@ -155,11 +199,11 @@ function parseChatObject(obj) {
   return segments;
 }
 
-export function cleanMotd(motd) {
+export function cleanMotd(motd: any): string {
   if (typeof motd === 'object' && motd !== null) {
     if (motd.text) return cleanMotd(motd.text);
     if (motd.extra) {
-      return motd.extra.map(e => cleanMotd(e)).join('');
+      return motd.extra.map((e: any) => cleanMotd(e)).join('');
     }
     return '';
   }

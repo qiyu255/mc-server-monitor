@@ -19,6 +19,7 @@
     "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "@types/react": "^18.3.12",
     "tsx": "^4.0.0"
   }
