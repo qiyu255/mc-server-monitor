@@ -1,5 +1,5 @@
 import React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Text, useApp } from 'ink';
 import { pingJava } from '@minescope/mineping';
 import dns from 'dns';
@@ -279,22 +279,25 @@ function ServerRow({ result }: { result: ServerResult }) {
 }
 
 function App({ servers }: { servers: string[] }) {
-  const [results, setResults] = useState<ServerResult[]>([]);
+   const [results, setResults] = useState<ServerResult[]>([]);
   const [lastCheck, setLastCheck] = useState<Date | null>(null);
   const [isChecking, setIsChecking] = useState(false);
+  const checkingRef = useRef(false);   // ← 新增：真正的互斥锁
   const { exit } = useApp();
 
   const checkAll = useCallback(async () => {
-    if (isChecking) return;
-    setIsChecking(true);
+    if (checkingRef.current) return;     // ← 用 ref 判断，不触发重渲染
+    checkingRef.current = true;
+    setIsChecking(true);                  // ← 仅用于 UI 显示
 
     const promises = servers.map((addr: string) => pingServer(addr));
     const newResults = await Promise.all(promises);
 
     setResults(newResults);
     setLastCheck(new Date());
+    checkingRef.current = false;
     setIsChecking(false);
-  }, [servers, isChecking]);
+  }, [servers]);                          // ← 只依赖 servers，稳定不变
 
   useEffect(() => {
     checkAll();
@@ -302,7 +305,7 @@ function App({ servers }: { servers: string[] }) {
       checkAll();
     }, 60000);
     return () => clearInterval(interval);
-  }, [checkAll]);
+  }, [checkAll]);            
 
   useEffect(() => {
     const handleSigint = () => {
@@ -357,5 +360,6 @@ function App({ servers }: { servers: string[] }) {
     </Box>
   );
 }
+
 
 export default App;
