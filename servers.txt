@@ -1,0 +1,8 @@
+# Minecraft Java Edition servers to monitor
+# One server per line, format: host[:port]
+# Empty lines and lines starting with # are ignored
+
+hypixel.net
+mc.hypixel.net
+us.mineplex.com
+play.cubecraft.net
